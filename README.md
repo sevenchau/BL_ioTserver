@@ -1,13 +1,23 @@
 # BL_ioTserver
 
-init
-touch README.md
-git init
-git add README.md
-git commit -m "first commit"
-git remote add origin https://github.com/sidedish/libjpeg-turbo-1.3.0.git
-git push -u origin master
+## file note e.g.
+/**
+  ******************************************************************************
+  * @file    : bs_upcommunicate.c 
+  * @author  : Seven K. Zhou
+  * @version : V 1.0.0
+  * @date    : 2017/07/15
+  ******************************************************************************
+  * @brief  --
+  ******************************************************************************
+  */
 
-push 
-git remote add origin https://github.com/sidedish/libjpeg-turbo-1.3.0.git
-git push -u origin master
+## fuction note e.g.
+/*******************************************************************************
+ * @brief  CreatAppTask(): create App task
+ * @param  task->StrOSTask[task]
+ * @param  para-> task fuction
+ * @param  task_pro -> task priority
+ * @retval void
+ * Author: 2017/7/3, by Seven K. Zhou
+*******************************************************************************/
