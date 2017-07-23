@@ -29,6 +29,12 @@
 #define QUEUE   							20
 #define BUFFER_SIZE 						1024
 
+/*******************************************************************************
+ * @brief  socket_no_blocking(): set socket no blocking
+ * @param  fd : the socket fd
+ * @retval int32_t , 0: means successful  -1: means failed
+ * Author: 2017/7/23, by Seven K. Zhou
+*******************************************************************************/
 int32_t socket_no_blocking(int fd)
 {
 	int flags = fcntl(fd, F_GETFL, 0);
@@ -45,6 +51,12 @@ int32_t socket_no_blocking(int fd)
 	return 0;
 }
 
+/*******************************************************************************
+ * @brief  socket_keep_alive(): set the socket keep alive.
+ * @param  fd : the socket fd
+ * @retval int32_t , 0: means successful  -1: means failed
+ * Author: 2017/7/23, by Seven K. Zhou
+*******************************************************************************/
 int32_t socket_keep_alive(int fd) 
 {
 	int ret;
@@ -92,6 +104,12 @@ int32_t socket_keep_alive(int fd)
 
 }
 
+/*******************************************************************************
+ * @brief  socket_keep_alive(): the thread is listen message which come from the base station.
+ * @param  *arg
+ * @retval void
+ * Author: 2017/7/, by Seven K. Zhou
+*******************************************************************************/
 void thread_bs_up_communicate(void *arg)
 {
 	int32_t ret = 0;
@@ -164,7 +182,7 @@ void thread_bs_up_communicate(void *arg)
 	int32_t event_num = 0; // 要处理事件的数目
 	int32_t cnt = 0;
 
-	pthread_cleanup_push(ThreadResRelease, "thread cleaup");
+	pthread_cleanup_push(void*(0), "thread cleaup");
     while(1) {
         // 2.6.17 版本内核中增加了 EPOLLRDHUP 事件，代表对端断开连接
         // 第4个参数：-1相当于阻塞，0相当于非阻塞。一般用-1即可。
