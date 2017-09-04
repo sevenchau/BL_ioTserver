@@ -3,6 +3,7 @@ zSI4/
 lst/
 obj/
 bin/
+*.pdf
 *.dep
 *.uvgui.*
 *.uvgui_*.bak

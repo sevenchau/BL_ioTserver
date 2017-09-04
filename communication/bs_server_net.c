@@ -200,7 +200,7 @@ void thread_bs_up_communicate(void *arg)
 				 }
 
 				 // keep alive 机制;及时有效地检测到一方的非正常断开
-				 int ret = socket_keep_alive(sockfd);
+				 ret = socket_keep_alive(conn_fd);
 				 if (-1 == ret) {
 					fprintf(stderr, ":> socket keep alive fail ! close socket.\n");
 					close(conn_fd);
@@ -208,7 +208,7 @@ void thread_bs_up_communicate(void *arg)
 				 }
 				 
 				 // 设置为非阻塞模式
-				 ret = socket_no_blocking(socktfd);
+				 ret = socket_no_blocking(conn_fd);
 				 if (-1 == ret) {
 					 fprintf(stderr, ":> socket no blocking had set failed, abort().!! ");
 					 abort();
