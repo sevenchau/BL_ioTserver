@@ -8,10 +8,15 @@
   * @brief  cummunicate by TCP/UDP socket
   ******************************************************************************
   */
-#incldue "bs_server_net.h"
+#include "../inc/bs_server_net.h"
 
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <netdb.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+
 #include <stdio.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -20,6 +25,8 @@
 #include <stdlib.h>
 #include <fcntl.h>
 #include <sys/shm.h>
+#include <sys/epoll.h>
+#include <errno.h>
 
 #define EP_CREATE_SIZE                      5000
 #define EVENTSIZE							100
@@ -35,7 +42,7 @@
  * @retval int32_t , 0: means successful  -1: means failed
  * Author: 2017/7/23, by Seven K. Zhou
 *******************************************************************************/
-int32_t socket_no_blocking(int fd)
+static int32_t __socket_no_blocking(int fd)
 {
 	int flags = fcntl(fd, F_GETFL, 0);
 	if (-1 == flags) {
@@ -51,69 +58,62 @@ int32_t socket_no_blocking(int fd)
 	return 0;
 }
 
+
 /*******************************************************************************
  * @brief  socket_keep_alive(): set the socket keep alive.
  * @param  fd : the socket fd
  * @retval int32_t , 0: means successful  -1: means failed
  * Author: 2017/7/23, by Seven K. Zhou
+ 
+ * keep alive 机制;及时有效地检测到一方的非正常断开
+ * int keepalive = 1;	  // 开启keepalive属性
+ * int keepidle = 60;	  // 如该连接在60秒内没有任何数据往来,则进行探测
+ * int keepinterval = 5; // 探测时发包的时间间隔为5 秒
+ * int keepcount = 3;	  // 探测尝试的次数.如果第1次探测包就收到响应了,则后2次的不再发.
+ * setsockopt(rs, SOL_SOCKET, SO_KEEPALIVE, (void *)&keepalive , sizeof(keepalive));
+ * setsockopt(rs, SOL_TCP, TCP_KEEPIDLE, (void*)&keepidle , sizeof(keepidle ));
+ * setsockopt(rs, SOL_TCP, TCP_KEEPINTVL, (void *)&keepinterval , sizeof(keepinterval ));
+ * setsockopt(rs, SOL_TCP, TCP_KEEPCNT, (void *)&keepcount , sizeof(keepcount ));
 *******************************************************************************/
-int32_t socket_keep_alive(int fd) 
-{
-	int ret;
-
-	/* keep alive 机制;及时有效地检测到一方的非正常断开
-	int keepalive = 1;	 / 开启keepalive属性
-	int keepidle = 60;zz  // 如该连接在60秒内没有任何数据往来,则进行探测
-	int keepinterval = 5; // 探测时发包的时间间隔为5 秒
-	int keepcount = 3;	  // 探测尝试的次数.如果第1次探测包就收到响应了,则后2次的不再发.
-	setsockopt(rs, SOL_SOCKET, SO_KEEPALIVE, (void *)&keepalive , sizeof(keepalive ));
-	setsockopt(rs, SOL_TCP, TCP_KEEPIDLE, (void*)&keepidle , sizeof(keepidle ));
-	setsockopt(rs, SOL_TCP, TCP_KEEPINTVL, (void *)&keepinterval , sizeof(keepinterval ));
-	setsockopt(rs, SOL_TCP, TCP_KEEPCNT, (void *)&keepcount , sizeof(keepcount ));
-	*/
-	int keeplive = 1;
-	int keepidle =60;
-	int keepinterval = 5;
-	int keepcount =3;
+static int32_t __socket_keep_alive(int32_t infd) {
+    int32_t keepalive = 1;
+    int32_t keepcount = 1;
+    int32_t keepinterval = 2;
+    int32_t keepidle = 120;
+    int32_t ret = 0;
 	
-	ret = setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, (void *)&keepalive, sizeof(keepalive));
-	if (-1 == ret) {
-		fprintf(stderr, "failed to setsockopt SO_KEEPALIVE.\n");
-	    return -1;
-	}
-
-	ret = setsockopt(fd, SOL_TCP, TCP_KEEPIDLE, (void *)&keepidle, sizeof(keepidle));
-	if (-1 == ret) {
-		fprintf(stderr, "failed to setsockopt TCP_KEEPIDLE.\n");
-	    return -1;
-	}
-
-	ret = setsockopt(fd, SOL_TCP, TCP_KEEPINTVL, (void *)&keepinterval, sizeof(keepinterval));
-	if (-1 == ret) {
-		fprintf(stderr, "failed to setsockopt TCP_KEEPINTVL.\n");
-	    return -1;
-	}
-
-	ret = setsockopt(fd, SOL_TCP, TCP_KEEPCNT, (void *)&keepcount, sizeof(keepcount));
-	if (-1 == ret) {
-		fprintf(stderr, "failed to setsockopt TCP_KEEPCNT.\n");
-	    return -1;
-	}
-
-	return 0;
-
+    ret = setsockopt(infd, SOL_SOCKET, SO_KEEPALIVE, (void *)&keepalive, sizeof(keepalive));
+    if (ret != 0) {
+        fprintf(stderr, "failed to set socket option SO_KEEPALIVE: %s\n", strerror(errno));
+        return -1;
+    }
+    
+    ret = setsockopt(infd, IPPROTO_TCP, TCP_KEEPCNT, (void *)&keepcount, sizeof(keepcount));
+    if (ret != 0) {
+        fprintf(stderr, "failed to set tcp option TCP_KEEPCNT: %s\n", strerror(errno));
+        return -1;
+    }
+    
+    ret = setsockopt(infd, IPPROTO_TCP, TCP_KEEPIDLE, (void *)&keepidle, sizeof(keepidle));
+    if (ret != 0) {
+        fprintf(stderr, "failed to set tcp option TCP_KEEPIDLE: %s\n", strerror(errno));
+        return -1;
+    }
+	
+    ret = setsockopt(infd, IPPROTO_TCP, TCP_KEEPINTVL, (void *)&keepinterval, sizeof(keepinterval));
+    if (ret != 0) {
+        fprintf(stderr, "failed to set tcp option TCP_KEEPINTVL: %s\n", strerror(errno));
+        return -1;
+    }
+    return 0;
 }
 
-/*******************************************************************************
- * @brief  socket_keep_alive(): the thread is listen message which come from the base station.
- * @param  *arg
- * @retval void
- * Author: 2017/7/, by Seven K. Zhou
-*******************************************************************************/
-void thread_bs_up_communicate(void *arg)
+
+
+void thread_pkt_downlink(void *arg)
 {
 	int32_t ret = 0;
-
+	
     // 定义sockfd
     int sockfd = socket(AF_INET,SOCK_STREAM, 0);
 
@@ -122,6 +122,8 @@ void thread_bs_up_communicate(void *arg)
     local_sockaddr.sin_family = AF_INET;
     local_sockaddr.sin_port = htons(MYPORT);
     local_sockaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+	fprintf(stdout, "%s id:%d\n", __FUNCTION__,(int32_t)arg);
 
 	//一个端口释放后会等待两分钟之后才能再被使用，SO_REUSEADDR是让端口释放后立即就可以被再次使用。
 	//SO_REUSEADDR用于对TCP套接字处于TIME_WAIT状态下的socket，允许重复绑定使用。
@@ -140,12 +142,12 @@ void thread_bs_up_communicate(void *arg)
     }
 
 	// 设置为非阻塞模式
-	ret = socket_no_blocking(socktfd);
+	ret = __socket_no_blocking(sockfd);
 	if (-1 == ret) {
 		fprintf(stderr, ":> socket no blocking had set failed, abort().!! ");
 		abort();
 	}
-	
+
     // listen，成功返回0，出错返回-1
     if(listen(sockfd, SOMAXCONN) == -1)
     {
@@ -160,12 +162,9 @@ void thread_bs_up_communicate(void *arg)
         fprintf(stderr, ":> epoll_create error ! abort( )\n");
         abort();
     }
-	
     struct epoll_event event;
     struct epoll_event events[EVENTSIZE];
-
-	// 注册event到epoll中
-    event.data.fd  = sockfd;
+    event.data.fd  = ep_fd;
     event.events = EPOLLIN|EPOLLET;
     if (-1 == epoll_ctl(ep_fd, EPOLL_CTL_ADD, sockfd, &event)) {
         fprintf(stderr, ":> epoll_ctl error ! abort( )\n");
@@ -182,8 +181,10 @@ void thread_bs_up_communicate(void *arg)
 	int32_t event_num = 0; // 要处理事件的数目
 	int32_t cnt = 0;
 
-	pthread_cleanup_push(void*(0), "thread cleaup");
-    while(1) {
+	int conn_fd;
+	
+    while(1)
+    {
         // 2.6.17 版本内核中增加了 EPOLLRDHUP 事件，代表对端断开连接
         // 第4个参数：-1相当于阻塞，0相当于非阻塞。一般用-1即可。
         event_num = epoll_wait(ep_fd, events, EVENTSIZE, -1);
@@ -191,24 +192,24 @@ void thread_bs_up_communicate(void *arg)
 		for (cnt=0; cnt<event_num; cnt++) {
 			//如果新监测到一个SOCKET用户连接到了绑定的SOCKET端口，则建立新的连接。
 			// 并且设置为keep alive机制， 设置为非阻塞模式。
-			 if(sockfd == events[i].data.fd) {
-				 // 建立新的连接。conn_fd 为新的socket
-				 int conn_fd = accept(local_sockaddr, (struct sockaddr*)&client_addr, &length);
+			 if(sockfd == events[cnt].data.fd) {
+				 //建立新的连接。conn_fd 为新的socket
+				 conn_fd = accept(sockfd, (struct sockaddr*)&client_addr, &length);
 				 if (conn_fd<0) {
 					 fprintf(stderr, ":> connect error ! abort( )\n");
 					 abort();
 				 }
 
 				 // keep alive 机制;及时有效地检测到一方的非正常断开
-				 ret = socket_keep_alive(conn_fd);
+				 ret = __socket_keep_alive(conn_fd);
 				 if (-1 == ret) {
 					fprintf(stderr, ":> socket keep alive fail ! close socket.\n");
 					close(conn_fd);
 				 	break;
 				 }
-				 
+
 				 // 设置为非阻塞模式
-				 ret = socket_no_blocking(conn_fd);
+				 ret = __socket_no_blocking(conn_fd);
 				 if (-1 == ret) {
 					 fprintf(stderr, ":> socket no blocking had set failed, abort().!! ");
 					 abort();
@@ -227,49 +228,70 @@ void thread_bs_up_communicate(void *arg)
 				 // TOTO: 将conn_fd添加到链表中，以备后续查询并使用。需要建立一个FD_LIST
 				 
 			 }
-			 //如果是已经连接的用户，并且收到数据，那么进行读入。
-			 else if (events[i].events & EPOLLIN) {
-				 if (events[i].data.fd)< 0) {
-					 continue;
+			 else if ((events[cnt].events & EPOLLIN)) { //如果是已经连接的用户，并且收到数据，那么进行读入。
+				  if ((events[cnt].data.fd)< 0) {
+					  continue;
+				  }
+				 
+				 // 读取数据直到读空
+				 while(1) { 				 
+					 rd_len = read(events[cnt].data.fd, rd_buff, sizeof(rd_buff));
+					 
+					 if (rd_len < 0 ) { // 数据错误
+					 
+						 if(errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+							 break;
+						 }
+						 
+						 //if socket err, delete from list and close(fd)
+						 // TDOO: ret = TDOO(events[i].data.fd);
+						 if (ret != 0) {
+							 fprintf(stderr, ":> delete and close failed !!\n");
+							 abort();
+						 }
+						 break;
+				 
+					 }
+					 else if (0 == rd_len) { // 无数据
+						 // TDOO: ret = TDOO(events[i].data.fd);
+						 if (ret != 0) {
+							 fprintf(stderr, ":> delete and close failed!!\n");
+							 abort();
+						 }
+						 break;
+					 }
+					 else { // 有数据
+					 /* TODO:处理接收到的数据，如入链表等操作 */
+					 //    (events[i].data.fd, rd_buff, rd_len); 
+					 }
 				 }
 
-			 	// 读取数据直到读空
-			 	while(1) {					
-					rd_len = read(events[i].data.fd, rd_buff, sizeof(rd_buff));
-					
-					if (rd_len < 0 ) { // 数据错误
-					
-						if(errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
-							break;
-						}
-						
-						//if socket err, delete from list and close(fd)
-						// TDOO: ret = TDOO(events[i].data.fd);
-						if (ret != 0) {
-							fprintf(stderr, ":> delete and close failed !!\n");
-							abort();
-						}
-						break;
-
-					}
-					else if (0 == rd_len) { // 无数据
-                        // TDOO: ret = TDOO(events[i].data.fd);
-                        if (ret != 0) {
-                            fprintf(stderr, ":> delete and close failed!!\n");
-                            abort();
-                        }
-                        break;
-					}
-					else { // 有数据
-					/* TODO:处理接收到的数据，如入链表等操作 */
-                    //    (events[i].data.fd, rd_buff, rd_len); 
-					}
-				}
 			 }
+			 else if ((events[cnt].events & EPOLLERR) || (events[cnt].events & EPOLLHUP) ||
+				 (events[cnt].events & EPOLLRDHUP)) {
+				 
+				 fprintf(stderr, "cc distribute epoll error\n");
+				 if (sockfd == events[cnt].data.fd) {
+					 fprintf(stderr, "must re-bing cc now........\n");
+					 abort();
+				 }
+				 else {
+					 // TODO: ret = delete_and_close(events[i].data.fd);
+					 if (ret != 0) {
+						 fprintf(stderr, "delete_and_close:%s:%d\n", __func__, __LINE__);
+						 abort();
+					 }
+				 }
+				 continue;
+			 }
+
 		}
 		
     }
-	pthread_cleanup_pop();
 	
+    close(conn_fd);
+    close(sockfd);
+	
+    return ;
 }
 
