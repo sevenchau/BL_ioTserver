@@ -20,3 +20,5 @@ bin/
 *.pbxproj
 *.cogui
 *.comarker
+*.o
+exec/
