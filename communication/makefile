@@ -15,7 +15,7 @@ all: $(APP_NAME)
 	@echo "|               communication MAKE DONE                   |"
 	@echo "|---------------------------------------------------------|"
  
-$(APP_NAME): $(OBJS)
+$(APP_NAME): $(OBJS) -lpthread
 	$(CXX) -o $@ $^ $(LIBS)
 	
 clean:

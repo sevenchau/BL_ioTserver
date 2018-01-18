@@ -31,7 +31,7 @@
 #define EP_CREATE_SIZE                      5000
 #define EVENTSIZE							100
 
-#define MYPORT  							8000
+#define MYPORT  							8080
 
 #define QUEUE   							20
 #define BUFFER_SIZE 						1024
@@ -130,13 +130,13 @@ void thread_pkt_downlink(void *arg)
 	//server程序总是应该在调用bind()之前设置SO_REUSEADDR套接字选项。
 	int value = 1;
 	if (-1 == setsockopt(sockfd, SOL_SOCKET,SO_REUSEADDR, &value, sizeof(value))) {
-		fprintf(stderr, ":> setsockopt SO_REUSEADDR fail !!\n");
+		fprintf(stderr, ":> setsockopt SO_REUSEADDR fail !!\r\n");
 	}
 
     // bind，成功返回0，出错返回-1
     if(bind(sockfd, (struct sockaddr *)&local_sockaddr, sizeof(local_sockaddr)) == -1)
     {
-        fprintf(stderr, ":> bind had binded failed, it will retry!! ");
+        fprintf(stderr, ":> bind had binded failed, it will retry!!\r\n");
 		
         return;
     }
@@ -144,7 +144,7 @@ void thread_pkt_downlink(void *arg)
 	// 设置为非阻塞模式
 	ret = __socket_no_blocking(sockfd);
 	if (-1 == ret) {
-		fprintf(stderr, ":> socket no blocking had set failed, abort().!! ");
+		fprintf(stderr, ":> socket no blocking had set failed, abort().!! \r\n");
 		abort();
 	}
 
@@ -164,7 +164,7 @@ void thread_pkt_downlink(void *arg)
     }
     struct epoll_event event;
     struct epoll_event events[EVENTSIZE];
-    event.data.fd  = ep_fd;
+    event.data.fd  = sockfd;
     event.events = EPOLLIN|EPOLLET;
     if (-1 == epoll_ctl(ep_fd, EPOLL_CTL_ADD, sockfd, &event)) {
         fprintf(stderr, ":> epoll_ctl error ! abort( )\n");
@@ -179,104 +179,117 @@ void thread_pkt_downlink(void *arg)
     socklen_t length = sizeof(client_addr);
 
 	int32_t event_num = 0; // 要处理事件的数目
-	int32_t cnt = 0;
+	int32_t i = 0;
 
 	int conn_fd;
+	
+	fprintf(stdout, "%s create successful\r\n", __FUNCTION__);
 	
     while(1)
     {
         // 2.6.17 版本内核中增加了 EPOLLRDHUP 事件，代表对端断开连接
         // 第4个参数：-1相当于阻塞，0相当于非阻塞。一般用-1即可。
         event_num = epoll_wait(ep_fd, events, EVENTSIZE, -1);
-		
-		for (cnt=0; cnt<event_num; cnt++) {
-			//如果新监测到一个SOCKET用户连接到了绑定的SOCKET端口，则建立新的连接。
-			// 并且设置为keep alive机制， 设置为非阻塞模式。
-			 if(sockfd == events[cnt].data.fd) {
-				 //建立新的连接。conn_fd 为新的socket
-				 conn_fd = accept(sockfd, (struct sockaddr*)&client_addr, &length);
-				 if (conn_fd<0) {
-					 fprintf(stderr, ":> connect error ! abort( )\n");
-					 abort();
-				 }
-
-				 // keep alive 机制;及时有效地检测到一方的非正常断开
-				 ret = __socket_keep_alive(conn_fd);
-				 if (-1 == ret) {
-					fprintf(stderr, ":> socket keep alive fail ! close socket.\n");
-					close(conn_fd);
-				 	break;
-				 }
-
-				 // 设置为非阻塞模式
-				 ret = __socket_no_blocking(conn_fd);
-				 if (-1 == ret) {
-					 fprintf(stderr, ":> socket no blocking had set failed, abort().!! ");
-					 abort();
-				 }
-
-				 event.data.fd	 = conn_fd;
-				 event.events = EPOLLIN | EPOLLET;
-				 
-				 // 注册event到epoll中
-				 ret = epoll_ctl(ep_fd, EPOLL_CTL_ADD, conn_fd, &event);
-				 if (ret == -1) {
-					 fprintf(stderr, "epoll_ctl error!!\n");
-					 close(conn_fd);
-				 }
-
-				 // TOTO: 将conn_fd添加到链表中，以备后续查询并使用。需要建立一个FD_LIST
-				 
-			 }
-			 else if ((events[cnt].events & EPOLLIN)) { //如果是已经连接的用户，并且收到数据，那么进行读入。
-				  if ((events[cnt].data.fd)< 0) {
+		fprintf(stdout, "epoll_wait events number:%d\r\n", event_num);
+		for (i=0; i<event_num; i++) {
+			 if ((events[i].events & EPOLLIN)) { //如果是已经连接的用户，并且收到数据，那么进行读入。
+				  if ((events[i].data.fd)< 0) {
 					  continue;
 				  }
-				 
-				 // 读取数据直到读空
-				 while(1) { 				 
-					 rd_len = read(events[cnt].data.fd, rd_buff, sizeof(rd_buff));
+				//如果新监测到一个SOCKET用户连接到了绑定的SOCKET端口，则建立新的连接。
+				// 并且设置为keep alive机制， 设置为非阻塞模式。
+				 if(sockfd == events[i].data.fd) {
+					 fprintf(stderr, "the new socket ...\r\n");
+					 //建立新的连接。conn_fd 为新的socket
+					 conn_fd = accept(sockfd, (struct sockaddr*)&client_addr, &length);
+					 if (conn_fd<0) {
+						 fprintf(stderr, ":> connect error ! abort( )\n");
+						 abort();
+					 }
+
+					 // keep alive 机制;及时有效地检测到一方的非正常断开
+					 ret = __socket_keep_alive(conn_fd);
+					 if (-1 == ret) {
+						fprintf(stderr, ":> socket keep alive fail ! close socket.\n");
+						close(conn_fd);
+						break;
+					 }
+
+					 // 设置为非阻塞模式
+					 ret = __socket_no_blocking(conn_fd);
+					 if (-1 == ret) {
+						 fprintf(stderr, ":> socket no blocking had set failed, abort().!! ");
+						 abort();
+					 }
+
+					 event.data.fd	 = conn_fd;
+					 event.events = EPOLLIN | EPOLLET;
 					 
-					 if (rd_len < 0 ) { // 数据错误
+					 // 注册event到epoll中
+					 ret = epoll_ctl(ep_fd, EPOLL_CTL_ADD, conn_fd, &event);
+					 if (ret == -1) {
+						 fprintf(stderr, "epoll_ctl error!!\n");
+						 close(conn_fd);
+					 }
+
+					 // TOTO: 将conn_fd添加到链表中，以备后续查询并使用。需要建立一个FD_LIST
 					 
-						 if(errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+				 }
+				 else {
+					 // 读取数据直到读空
+					 while(1) {
+						fprintf(stderr, "receive message->");
+						memset(rd_buff, 0, sizeof(rd_buff));
+						rd_len = read(events[i].data.fd, rd_buff, sizeof(rd_buff));
+						 
+						 if (rd_len < 0 ) { // 数据错误
+							 fprintf(stderr, "error\r\n");
+							 if(errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+								 break;
+							 }
+							 close(events[i].data.fd);
+							 fprintf(stderr, "close fd:rd_len < 0\r\n");
+							 //if socket err, delete from list and close(fd)
+							 // TDOO: ret = TDOO(events[i].data.fd);
+							 if (ret != 0) {
+								 fprintf(stderr, ":> delete and close failed !!\n");
+								 abort();
+							 }
+							 break;
+					 
+						 }
+						 else if (0 == rd_len) { // 无数据
+							 fprintf(stderr, "no message\r\n");
+							 // TDOO: ret = TDOO(events[i].data.fd);
+							 close(events[i].data.fd);
+							 fprintf(stderr, "close fd:rd_len == 0\r\n");
+							 if (ret != 0) {
+								 fprintf(stderr, ":> delete and close failed!!\n");
+								 abort();
+							 }
 							 break;
 						 }
-						 
-						 //if socket err, delete from list and close(fd)
-						 // TDOO: ret = TDOO(events[i].data.fd);
-						 if (ret != 0) {
-							 fprintf(stderr, ":> delete and close failed !!\n");
-							 abort();
+						 else { // 有数据
+						 /* TODO:处理接收到的数据，如入链表等操作 */
+						 //    (events[i].data.fd, rd_buff, rd_len); 
+							fprintf(stdout, "has message\r\n");
+							fprintf(stdout, "%s\r\n", rd_buff);
 						 }
-						 break;
-				 
 					 }
-					 else if (0 == rd_len) { // 无数据
-						 // TDOO: ret = TDOO(events[i].data.fd);
-						 if (ret != 0) {
-							 fprintf(stderr, ":> delete and close failed!!\n");
-							 abort();
-						 }
-						 break;
-					 }
-					 else { // 有数据
-					 /* TODO:处理接收到的数据，如入链表等操作 */
-					 //    (events[i].data.fd, rd_buff, rd_len); 
-					 }
-				 }
-
+				}
 			 }
-			 else if ((events[cnt].events & EPOLLERR) || (events[cnt].events & EPOLLHUP) ||
-				 (events[cnt].events & EPOLLRDHUP)) {
+			 else if ((events[i].events & EPOLLERR) || (events[i].events & EPOLLHUP) ||
+				 (events[i].events & EPOLLRDHUP)) {
 				 
-				 fprintf(stderr, "cc distribute epoll error\n");
-				 if (sockfd == events[cnt].data.fd) {
-					 fprintf(stderr, "must re-bing cc now........\n");
+				 fprintf(stderr, "epoll error\n");
+				 if (sockfd == events[i].data.fd) {
+					 fprintf(stderr, "must re-bind now........\n");
 					 abort();
 				 }
 				 else {
 					 // TODO: ret = delete_and_close(events[i].data.fd);
+					 close(events[i].data.fd);
+					 fprintf(stderr, "close fd:event error\r\n");
 					 if (ret != 0) {
 						 fprintf(stderr, "delete_and_close:%s:%d\n", __func__, __LINE__);
 						 abort();
@@ -286,7 +299,7 @@ void thread_pkt_downlink(void *arg)
 			 }
 
 		}
-		
+		usleep(10*1000);
     }
 	
     close(conn_fd);
